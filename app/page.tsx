@@ -3,13 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-// --- TYPES ---
 type Handoff = {
   id: string;
   created_at: string;
-  summary?: string | null;
 
-  // structured fields
+  summary?: string | null;
   phase?: string | null;
   reported_by?: string | null;
   reported_role?: string | null;
@@ -43,7 +41,6 @@ type Signoff = {
   notes?: string | null;
 };
 
-// --- HELPER FUNCTIONS ---
 function niceTime(ts?: string | null) {
   if (!ts) return "n/a";
   const d = new Date(ts);
@@ -60,18 +57,12 @@ function isUseful(v: unknown) {
 }
 
 export default function Home() {
-  // --- STATE ---
   const [rows, setRows] = useState<Handoff[]>([]);
-  const [loading, setLoading] = useState(false);
-  
-  // Feature: Expand Button
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // Selection & Sign-offs
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSignoffs, setSelectedSignoffs] = useState<Signoff[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Signoff Form State
+  // Signoff UI state
   const [enableSignoff, setEnableSignoff] = useState(false);
   const [signName, setSignName] = useState("");
   const [signRole, setSignRole] = useState("");
@@ -79,7 +70,6 @@ export default function Home() {
   const [signNotes, setSignNotes] = useState("");
   const [signSaving, setSignSaving] = useState(false);
 
-  // --- LOGIC ---
   const selected = useMemo(
     () => rows.find((r) => r.id === selectedId) ?? null,
     [rows, selectedId]
@@ -87,6 +77,7 @@ export default function Home() {
 
   async function load() {
     setLoading(true);
+
     const { data, error } = await supabase
       .from("handoffs")
       .select("*")
@@ -95,13 +86,15 @@ export default function Home() {
     if (error) {
       console.error(error);
       setRows([]);
-    } else {
-      setRows((data as Handoff[]) || []);
-      // If we have data but no selection, select the first one
-      if (!selectedId && data && data.length > 0) {
-        setSelectedId(data[0].id);
-      }
+      setSelectedId(null);
+      setLoading(false);
+      return;
     }
+
+    const clean = (data as Handoff[]) || [];
+    setRows(clean);
+    if (!selectedId && clean.length) setSelectedId(clean[0].id);
+
     setLoading(false);
   }
 
@@ -115,28 +108,38 @@ export default function Home() {
     if (error) {
       console.error(error);
       setSelectedSignoffs([]);
-    } else {
-      setSelectedSignoffs((data as Signoff[]) || []);
+      return;
     }
+
+    setSelectedSignoffs((data as Signoff[]) || []);
   }
 
-  // Initial Load
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When selection changes, load sign-offs
   useEffect(() => {
     if (!selectedId) return;
     loadSignoffs(selectedId);
 
-    // Auto-fill phase if possible
+    // default signoff phase to the selected handoff phase (if exists)
     const phase = rows.find((r) => r.id === selectedId)?.phase;
     if (phase && !signPhase) setSignPhase(phase);
-    
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const byPhase: Record<string, number> = {};
+    rows.forEach((r) => {
+      const p = (r.phase || "Unknown").trim();
+      byPhase[p] = (byPhase[p] || 0) + 1;
+    });
+    const topPhase = Object.entries(byPhase).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "n/a";
+    return { total, topPhase };
+  }, [rows]);
 
   const detailSections = useMemo(() => {
     if (!selected) return [];
@@ -217,117 +220,146 @@ export default function Home() {
 
     if (error) {
       console.error(error);
-      alert("Sign-off failed. Check console.");
+      alert("Sign-off failed. Check console + Supabase permissions.");
       return;
     }
 
-    // Success: reset form and reload list
+    // reset + refresh list
     setEnableSignoff(false);
     setSignNotes("");
     await loadSignoffs(selected.id);
   }
 
-  // --- RENDER ---
   return (
-    <main className="min-h-screen bg-zinc-100 text-zinc-900 font-sans">
+    <main className="min-h-screen bg-zinc-100 text-zinc-900">
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr]">
-        
         {/* SIDEBAR */}
-        <aside className="bg-white border-r border-zinc-200 p-5 min-h-screen sticky top-0 h-screen overflow-y-auto">
+        <aside className="bg-white border-r border-zinc-200 p-5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-zinc-900 text-white grid place-items-center font-bold">H</div>
+            <div className="h-10 w-10 rounded-xl bg-zinc-900 text-white grid place-items-center font-bold">
+              H
+            </div>
             <div>
               <div className="font-semibold leading-tight">Hand-off</div>
               <div className="text-xs text-zinc-500">Internal Dashboard</div>
             </div>
           </div>
-          <div className="mt-6 space-y-1 text-sm">
-            <div className="px-3 py-2 rounded-lg bg-zinc-900 text-white font-medium">Handoffs</div>
-            <div className="px-3 py-2 rounded-lg text-zinc-600 hover:bg-zinc-50 cursor-pointer">Overview</div>
-            <div className="px-3 py-2 rounded-lg text-zinc-600 hover:bg-zinc-50 cursor-pointer">Settings</div>
+
+          <div className="mt-6 space-y-2 text-sm">
+            <div className="px-3 py-2 rounded-lg bg-zinc-900 text-white font-medium">
+              Handoffs
+            </div>
+            <div className="px-3 py-2 rounded-lg text-zinc-600">Overview</div>
+            <div className="px-3 py-2 rounded-lg text-zinc-600">Settings</div>
           </div>
+
+          <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+            <div className="text-xs text-zinc-500">Total handoffs</div>
+            <div className="text-2xl font-bold mt-1">{stats.total}</div>
+            <div className="text-xs text-zinc-500 mt-3">Most common phase</div>
+            <div className="text-sm font-semibold mt-1">{stats.topPhase}</div>
+          </div>
+
           <button
             onClick={load}
             className="mt-6 w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium hover:bg-zinc-50"
           >
-            {loading ? "Refreshing..." : "Refresh Data"}
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </aside>
 
-        {/* MAIN CONTENT */}
+        {/* MAIN */}
         <section className="p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold">Internal Hand-off Dashboard</h1>
-              <p className="text-sm text-zinc-600 mt-1">Voice → Vapi → n8n → Supabase → this screen</p>
+              <p className="text-sm text-zinc-600 mt-1">
+                Voice → Vapi → n8n → Supabase → this screen
+              </p>
+            </div>
+
+            <div className="hidden md:flex items-center gap-3">
+              <div className="rounded-xl bg-white border border-zinc-200 px-4 py-2">
+                <div className="text-[11px] text-zinc-500">Selected</div>
+                <div className="text-sm font-semibold">
+                  {selected?.phase ?? "n/a"} {selected?.client_name ? `• ${selected.client_name}` : ""}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr] gap-6 mt-6 items-start">
-            
-            {/* LIST PANEL (With Expand Feature) */}
-            <div className={`rounded-2xl bg-white border border-zinc-200 p-4 shadow-sm transition-all duration-300 ${isExpanded ? 'row-span-2' : ''}`}>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-semibold text-zinc-800">All handoffs</h2>
-                <div className="flex gap-2 items-center">
-                  <button 
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="text-xs text-zinc-500 hover:text-blue-600 font-medium px-2 py-1 rounded hover:bg-zinc-100 transition"
-                  >
-                    {isExpanded ? "Collapse View" : "Expand View"}
-                  </button>
-                  <div className="text-xs text-zinc-500">{rows.length} records</div>
-                </div>
+          <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr] gap-5 mt-6">
+            {/* LIST */}
+            <div className="rounded-2xl bg-white border border-zinc-200 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold">All handoffs</h2>
+                <div className="text-xs text-zinc-500">{rows.length} rows</div>
               </div>
 
-              {/* The List Container */}
-              <div className={`space-y-2 pr-1 transition-all ${isExpanded ? '' : 'max-h-[75vh] overflow-auto'}`}>
+              <div className="mt-3 space-y-2 max-h-[70vh] overflow-auto pr-1">
                 {rows.map((r) => {
                   const active = r.id === selectedId;
-                  // Simple check if this handoff has any signoffs loaded (optional visual cue)
-                  // For now we keep the list simple to avoid complex filtering logic
                   return (
                     <button
                       key={r.id}
                       onClick={() => setSelectedId(r.id)}
                       className={`w-full text-left p-3 rounded-xl border transition ${
-                        active ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900" : "border-zinc-200 hover:bg-zinc-50"
+                        active
+                          ? "border-zinc-900 bg-zinc-50"
+                          : "border-zinc-200 hover:bg-zinc-50"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold text-sm">
-                          {r.phase || "Unknown"} {r.client_name ? `— ${r.client_name}` : ""}
+                        <div className="font-semibold">
+                          {(r.phase && r.phase !== "n/a" ? r.phase : "Unknown") +
+                            (r.client_name ? ` — ${r.client_name}` : "")}
                         </div>
+                        {r.priority && isUseful(r.priority) ? (
+                          <span className="text-xs px-2 py-1 rounded-full bg-zinc-900 text-white">
+                            {String(r.priority)}
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="text-xs text-zinc-500 mt-1">
-                        {niceTime(r.created_at)} • {r.reported_by || "n/a"}
+
+                      <div className="text-xs text-zinc-600 mt-1">
+                        {(r.reported_by && isUseful(r.reported_by) ? r.reported_by : "n/a")} •{" "}
+                        {niceTime(r.created_at)}
                       </div>
+
+                      {r.summary && isUseful(r.summary) ? (
+                        <div className="text-xs text-zinc-600 mt-2 line-clamp-2">
+                          {r.summary}
+                        </div>
+                      ) : null}
                     </button>
                   );
                 })}
-                 {!rows.length && !loading && (
-                  <div className="text-sm text-zinc-500 p-2">No records found.</div>
+
+                {!rows.length && !loading && (
+                  <div className="text-sm text-zinc-500">No records yet.</div>
                 )}
               </div>
             </div>
 
-            {/* DETAILS PANEL */}
-            <div className="rounded-2xl bg-white border border-zinc-200 p-6 shadow-sm sticky top-6">
-              <h2 className="font-semibold mb-4 text-zinc-800">Details</h2>
+            {/* DETAILS */}
+            <div className="rounded-2xl bg-white border border-zinc-200 p-4">
+              <h2 className="font-semibold">Details</h2>
 
               {!selected ? (
-                <div className="text-sm text-zinc-500 italic">Select a handoff to view details.</div>
+                <div className="text-sm text-zinc-500 mt-3">Click a handoff on the left.</div>
               ) : (
-                <div className="space-y-6">
-                  
-                  {/* DATA SECTIONS */}
+                <div className="mt-3 space-y-4">
+                  {/* DETAILS SECTIONS */}
                   {detailSections.map((sec) => (
-                    <div key={sec.title} className="rounded-xl border border-zinc-200 p-4">
-                      <div className="text-xs font-bold uppercase text-zinc-400 mb-3 tracking-wider">{sec.title}</div>
-                      <div className="space-y-3">
+                    <div key={sec.title} className="rounded-xl border border-zinc-200 p-3">
+                      <div className="text-sm font-semibold">{sec.title}</div>
+                      <div className="mt-2 space-y-2">
                         {sec.items.map((it) => (
-                          <div key={it.label} className="grid grid-cols-[140px_1fr] gap-4 text-sm">
-                            <div className="text-zinc-500 font-medium">{it.label}</div>
+                          <div
+                            key={it.label}
+                            className="grid grid-cols-[160px_1fr] gap-3 text-sm"
+                          >
+                            <div className="text-zinc-600">{it.label}</div>
                             <div className="text-zinc-900 break-words">{it.value}</div>
                           </div>
                         ))}
@@ -335,89 +367,99 @@ export default function Home() {
                     </div>
                   ))}
 
-                  {/* SIGNOFFS SECTION (Uses separate table) */}
-                  <div className="rounded-xl border border-zinc-200 p-4 bg-zinc-50">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="text-sm font-bold uppercase text-zinc-600 tracking-wider">Sign-offs</div>
-                      <label className="flex items-center gap-2 text-xs text-blue-600 font-medium cursor-pointer hover:underline select-none">
+                  {/* SIGNOFFS */}
+                  <div className="rounded-xl border border-zinc-200 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold">Sign-offs</div>
+
+                      <label className="flex items-center gap-2 text-sm text-zinc-700 select-none">
                         <input
                           type="checkbox"
-                          className="h-3 w-3 accent-blue-600"
+                          className="h-4 w-4"
                           checked={enableSignoff}
                           onChange={(e) => setEnableSignoff(e.target.checked)}
                         />
-                        Add new sign-off
+                        Add sign-off
                       </label>
                     </div>
 
-                    {/* Signoff List */}
-                    <div className="space-y-2 mb-4">
-                      {selectedSignoffs.length > 0 ? (
+                    {/* existing signoffs list */}
+                    <div className="mt-3 space-y-2">
+                      {selectedSignoffs.length ? (
                         selectedSignoffs.map((s) => (
-                          <div key={s.id} className="bg-white border border-zinc-200 p-3 rounded-lg shadow-sm">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="text-sm font-semibold text-zinc-800">{s.signed_by_name}</div>
-                                <div className="text-xs text-zinc-500">{s.signed_by_role} • For phase: {s.signed_for_phase}</div>
+                          <div
+                            key={s.id}
+                            className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-medium text-sm">
+                                {s.signed_by_name} • {s.signed_by_role}
                               </div>
-                              <div className="text-[10px] text-zinc-400">{niceTime(s.created_at)}</div>
+                              <div className="text-xs text-zinc-600">{niceTime(s.created_at)}</div>
                             </div>
-                            {s.notes && <div className="text-xs text-zinc-600 mt-2 pt-2 border-t border-zinc-100">{s.notes}</div>}
+                            <div className="text-xs text-zinc-700 mt-1">
+                              Phase: <span className="font-medium">{s.signed_for_phase}</span>
+                            </div>
+                            {s.notes && isUseful(s.notes) ? (
+                              <div className="text-sm text-zinc-800 mt-2">{s.notes}</div>
+                            ) : null}
                           </div>
                         ))
                       ) : (
-                        <div className="text-xs text-zinc-400 italic">No sign-offs recorded yet.</div>
+                        <div className="text-sm text-zinc-500">No sign-offs yet.</div>
                       )}
                     </div>
 
-                    {/* Signoff Form */}
+                    {/* signoff form */}
                     {enableSignoff && (
-                      <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
-                         <div className="grid grid-cols-1 gap-3 mb-3">
-                           <input 
-                             placeholder="Your Name" 
-                             className="text-sm px-3 py-2 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                             value={signName}
-                             onChange={(e) => setSignName(e.target.value)}
-                           />
-                           <input 
-                             placeholder="Role (e.g. Architect)" 
-                             className="text-sm px-3 py-2 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                             value={signRole}
-                             onChange={(e) => setSignRole(e.target.value)}
-                           />
-                           <input 
-                             placeholder="Phase (e.g. Solutions)" 
-                             className="text-sm px-3 py-2 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                             value={signPhase}
-                             onChange={(e) => setSignPhase(e.target.value)}
-                           />
-                           <textarea
-                             placeholder="Optional notes..."
-                             className="text-sm px-3 py-2 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
-                             value={signNotes}
-                             onChange={(e) => setSignNotes(e.target.value)}
-                           />
-                         </div>
-                         <div className="flex gap-2">
-                           <button 
-                             onClick={submitSignoff}
-                             disabled={signSaving}
-                             className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-white font-medium py-2 rounded-lg text-sm transition"
-                           >
-                             {signSaving ? "Saving..." : "Submit Sign-off"}
-                           </button>
-                           <button 
-                             onClick={() => setEnableSignoff(false)}
-                             className="px-4 border border-zinc-200 hover:bg-zinc-50 text-zinc-600 font-medium py-2 rounded-lg text-sm transition"
-                           >
-                             Cancel
-                           </button>
-                         </div>
+                      <div className="mt-4 grid gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <input
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                            placeholder="Your name"
+                            value={signName}
+                            onChange={(e) => setSignName(e.target.value)}
+                          />
+                          <input
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                            placeholder="Your role (e.g. Solutions Architect)"
+                            value={signRole}
+                            onChange={(e) => setSignRole(e.target.value)}
+                          />
+                          <input
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                            placeholder="Phase you’re signing for (e.g. Solutions)"
+                            value={signPhase}
+                            onChange={(e) => setSignPhase(e.target.value)}
+                          />
+                        </div>
+
+                        <textarea
+                          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm min-h-[80px]"
+                          placeholder="Optional notes (what you checked / next step)"
+                          value={signNotes}
+                          onChange={(e) => setSignNotes(e.target.value)}
+                        />
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={submitSignoff}
+                            disabled={signSaving}
+                            className="rounded-lg bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-800 disabled:opacity-60"
+                          >
+                            {signSaving ? "Saving..." : "Submit sign-off"}
+                          </button>
+
+                          <button
+                            onClick={() => setEnableSignoff(false)}
+                            className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium hover:bg-zinc-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
-
                 </div>
               )}
             </div>
